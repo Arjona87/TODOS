@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Robo de Vehículos — Área Metropolitana de Guadalajara | CGES Jalisco</title>
-<meta name="description" content="Dashboard de análisis del delito de robo de vehículos en el Área Metropolitana de Guadalajara. Coordinación General Estratégica de Seguridad, Gobierno de Jalisco.">
+<title>Incidencia Delictiva — Área Metropolitana de Guadalajara | CGES Jalisco</title>
+<meta name="description" content="Dashboard de análisis de incidencia delictiva en el Área Metropolitana de Guadalajara. Coordinación General Estratégica de Seguridad, Gobierno de Jalisco.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -34,14 +34,10 @@
 <!-- ============ Header / Portada ============ -->
 <header class="hero">
   <div class="container">
-    <h1 class="hero-title">Robo de Vehículos <span class="accent">/</span> Área Metropolitana de Guadalajara</h1>
-    <p class="hero-sub">Panel de monitoreo del delito de robo de vehículo particular en el AMG. Este panel se alimenta en vivo desde la base de datos oficial y se actualiza automáticamente en cada carga.</p>
+    <h1 class="hero-title">Incidencia Delictiva <span class="accent">/</span> Área Metropolitana de Guadalajara</h1>
+    <p class="hero-sub">Panel de monitoreo de Incidencia Delictiva en el AMG.</p>
 
     <div class="hero-controls">
-      <div class="chip">Periodo base v1: <b>Enero – Junio 2026</b></div>
-      <select id="hero-year-select" aria-label="Seleccionar año">
-        <option value="all">Todos los años (2026 en v1)</option>
-      </select>
       <div class="brand">
         <img src="CGES_logo.png" alt="Coordinación General Estratégica de Seguridad — Gobierno de Jalisco">
       </div>
@@ -75,10 +71,6 @@
         <option value="con">Con violencia</option>
         <option value="sin">Sin violencia</option>
       </select>
-    </div>
-    <div class="filter-field">
-      <label for="filter-marca">Marca</label>
-      <select id="filter-marca"><option value="all">Todas</option></select>
     </div>
     <button class="btn-reset" id="btn-reset-filters">Limpiar filtros</button>
     <button class="btn-reset btn-report" id="btn-generar-reporte">Generar Reporte</button>
@@ -127,7 +119,7 @@
       <p>Mezcla de los 7 delitos bajo el filtro actual. Esta sección se oculta automáticamente al filtrar un delito específico.</p>
     </div>
     <div class="card">
-      <h3>Eventos por delito</h3>
+      <h3>Eventos por tipo de Robo</h3>
       <div class="chart-box tall" id="chart-delitos"></div>
     </div>
   </section>
@@ -296,7 +288,7 @@
   <section class="section" id="map-section">
     <div class="section-head" data-dl="map">
       <div class="eyebrow">Georreferencia</div>
-      <h2>Mapa dinámico de robos de vehículo</h2>
+      <h2>Mapa Dinámico</h2>
       <p>Ubicaciones reproyectadas a WGS84 a partir de la columna <code>wkt_geom</code> (UTM 13N). Solo se muestran metadatos no sensibles al hacer clic en un punto.</p>
     </div>
     <div class="card">

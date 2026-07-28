@@ -7,7 +7,7 @@
 const STATE = {
   allRecords: [],
   filtered: [],
-  filters: { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all", marca: "all" },
+  filters: { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" },
   source: "live",
 };
 
@@ -37,7 +37,6 @@ function applyFilters() {
       const wantViolence = f.violencia === "con";
       if (r.conViolencia !== wantViolence) return false;
     }
-    if (f.marca !== "all" && r.marca !== f.marca) return false;
     return true;
   });
 }
@@ -45,7 +44,6 @@ function applyFilters() {
 function populateFilterOptions() {
   const years = [...new Set(STATE.allRecords.map(r => r.anio))].sort();
   const municipios = [...new Set(STATE.allRecords.map(r => r.municipioGeo))].sort();
-  const marcas = [...new Set(STATE.allRecords.map(r => r.marca))].sort();
 
   // Catálogo fijo de 7 delitos (no derivado de los datos): así el selector
   // siempre muestra las mismas 7 opciones aunque el Sheet de prueba todavía
@@ -55,10 +53,6 @@ function populateFilterOptions() {
   fillSelect("filter-anio", years, "Todos los años");
   fillSelect("filter-mes", window.CGES.MESES_ORDEN, "Todos los meses", window.CGES.toTitle);
   fillSelect("filter-municipio", municipios, "Todos los municipios", window.CGES.toTitle);
-  fillSelect("filter-marca", marcas, "Todas las marcas", window.CGES.toTitle);
-
-  // Selector de año del header (hero) — mismo comportamiento, ligado al filtro global.
-  fillSelect("hero-year-select", years, "Todos los años (2026 en v1)");
 }
 
 function fillSelect(id, values, placeholderLabel, labelFn) {
@@ -69,29 +63,20 @@ function fillSelect(id, values, placeholderLabel, labelFn) {
 }
 
 function wireFilterEvents() {
-  ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia","filter-marca"].forEach(id => {
+  ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("change", () => {
       const key = id.replace("filter-","");
-      STATE.filters[key] = el.value === "all" ? "all" : (key==="violencia" ? el.value : el.value);
-      document.getElementById("hero-year-select").value =
-        key === "anio" ? el.value : document.getElementById("hero-year-select").value;
+      STATE.filters[key] = el.value;
       renderAll();
     });
   });
 
-  const heroYear = document.getElementById("hero-year-select");
-  if (heroYear) heroYear.addEventListener("change", () => {
-    STATE.filters.anio = heroYear.value;
-    document.getElementById("filter-anio").value = heroYear.value;
-    renderAll();
-  });
-
   const btnReset = document.getElementById("btn-reset-filters");
   if (btnReset) btnReset.addEventListener("click", () => {
-    STATE.filters = { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all", marca: "all" };
-    ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia","filter-marca","hero-year-select"]
+    STATE.filters = { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" };
+    ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = "all"; });
     renderAll();
   });
@@ -194,6 +179,15 @@ function fmtMoneda(n) {
   return "$" + Math.round(n || 0).toLocaleString("es-MX");
 }
 
+// Solo para la gráfica "Eventos por tipo de Robo": quita el prefijo
+// "ROBO A "/"ROBO DE " de las 7 categorías de Delito_EST, dejando únicamente
+// el tipo (ej. "ROBO A VEHICULOS PARTICULARES" -> "Vehículos Particulares").
+// No se usa en ningún otro lugar (el dropdown de Delito conserva el nombre completo).
+function shortenDelitoLabel(name) {
+  const stripped = (name || "").toString().replace(/^ROBO\s+(A|DE)\s+/i, "");
+  return window.CGES.toTitle(stripped);
+}
+
 function renderUniversalBlocks(agg) {
   const m = agg.montoStats;
   setHtml("universal-monto",
@@ -257,7 +251,10 @@ function updateDelitoDependentSections(agg) {
   if (delitoBreakdown) {
     const show = delito === "all";
     delitoBreakdown.style.display = show ? "" : "none";
-    if (show) window.CGES.renderHBar("chart-delitos", agg.topDelitos, window.CGES.PALETTE.navy);
+    if (show) {
+      const shortEntries = agg.topDelitos.map(([name, value]) => [shortenDelitoLabel(name), value]);
+      window.CGES.renderHBar("chart-delitos", shortEntries, window.CGES.PALETTE.navy);
+    }
   }
 
   // Las secciones que alternan entre oculto/visible pueden dejar a ECharts

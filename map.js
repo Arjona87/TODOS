@@ -82,15 +82,24 @@ function popupHtml(record) {
   const fecha = record.fecha
     ? new Date(record.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })
     : "Fecha no disponible";
+
+  // Línea "Vehículo" solo si el delito es vehicular Y hay dato real de marca/submarca
+  // (evita mostrar "Vehículo: Sin Dato Sin Dato" en delitos donde no aplica).
+  const hayVehiculo = record.esVehicular && record.marca !== "SIN DATO";
+  const lineaVehiculo = hayVehiculo
+    ? `<div><b>Vehículo:</b> ${window.CGES.toTitle(record.marca)} ${window.CGES.toTitle(record.submarca)}</div>`
+    : "";
+
   return `
     <div style="font-family:Inter,sans-serif; font-size:12.5px; min-width:190px;">
-      <div style="font-weight:700; color:#13294B; margin-bottom:4px;">${fecha}</div>
+      <div style="font-weight:700; color:#13294B; margin-bottom:4px;">${window.CGES.toTitle(record.delitoEst)}</div>
+      <div style="color:#4A4F57; margin-bottom:6px;">${fecha}</div>
       <div><b>Municipio:</b> ${window.CGES.toTitle(record.municipio)}</div>
       <div><b>Colonia:</b> ${window.CGES.toTitle(record.colonia)}</div>
       <div><b>Sector:</b> ${record.sector}</div>
       <div><b>Modalidad:</b> ${window.CGES.toTitle(record.modus)}</div>
       <div><b>Violencia:</b> ${record.conViolencia ? "Sí" : "No"}</div>
-      <div><b>Vehículo:</b> ${window.CGES.toTitle(record.marca)} ${window.CGES.toTitle(record.submarca)}</div>
+      ${lineaVehiculo}
     </div>`;
 }
 
