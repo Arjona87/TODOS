@@ -17,6 +17,86 @@ const PALETTE = {
 
 const CHART_INSTANCES = {};
 
+/* =========================================================================
+   Efecto "PLUS +" — gráficas vivas al hacer scroll
+   -------------------------------------------------------------------------
+   Controlado por el checkbox #toggle-plus (marcado por default). Cada
+   gráfica de ECharts guarda su última "option" calculada; cuando su
+   contenedor entra en pantalla (subiendo o bajando el scroll), se vuelve a
+   aplicar esa misma option con notMerge:true, lo que hace que ECharts la
+   trate como datos nuevos y repita la animación de entrada (barras creciendo
+   desde su eje base, donas barriéndose). Con cooldown de 1s por gráfica para
+   no disparar en cascada si el usuario hace scroll rápido de un lado a otro.
+   ========================================================================= */
+const CHART_LAST_OPTION = {};
+const CHART_LAST_REPLAY = {};
+const PLUS_REPLAY_COOLDOWN_MS = 1000;
+
+function isPlusEnabled() {
+  const el = document.getElementById("toggle-plus");
+  return el ? el.checked : true;
+}
+
+let chartObserver = null;
+function ensureChartObserver() {
+  if (chartObserver) return chartObserver;
+  chartObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting || !isPlusEnabled()) return;
+      const domId = entry.target.dataset.chartId;
+      const opt = domId && CHART_LAST_OPTION[domId];
+      const inst = domId && CHART_INSTANCES[domId];
+      if (!opt || !inst) return;
+      const now = Date.now();
+      if (CHART_LAST_REPLAY[domId] && now - CHART_LAST_REPLAY[domId] < PLUS_REPLAY_COOLDOWN_MS) return;
+      CHART_LAST_REPLAY[domId] = now;
+      inst.setOption(opt, { notMerge: true });
+    });
+  }, { threshold: 0.2 });
+  return chartObserver;
+}
+
+// Todas las funciones de render de ECharts llaman a esto en vez de
+// chart.setOption(...) directamente, para quedar registradas en el
+// mecanismo de repetición por scroll.
+function applyChartOption(domId, chart, option) {
+  CHART_LAST_OPTION[domId] = option;
+  chart.setOption(option, { notMerge: true });
+  const el = document.getElementById(domId);
+  if (el && !el.dataset.chartObserved) {
+    el.dataset.chartId = domId;
+    el.dataset.chartObserved = "1";
+    ensureChartObserver().observe(el);
+  }
+}
+
+// Reveal genérico para elementos que NO son gráficas de ECharts (tarjetas de
+// KPI, heatmap, tablas de ranking): mismo criterio (scroll, 1s de cooldown,
+// respeta el toggle), pero vía una animación CSS (.cges-replay) en vez de
+// reconstruir una gráfica.
+const REVEAL_LAST = new WeakMap();
+let revealObserver = null;
+function ensureRevealObserver() {
+  if (revealObserver) return revealObserver;
+  revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting || !isPlusEnabled()) return;
+      const now = Date.now();
+      const last = REVEAL_LAST.get(entry.target) || 0;
+      if (now - last < PLUS_REPLAY_COOLDOWN_MS) return;
+      REVEAL_LAST.set(entry.target, now);
+      const el = entry.target;
+      el.classList.remove("cges-replay");
+      void el.offsetWidth; // fuerza reflow para poder re-disparar la misma animación
+      el.classList.add("cges-replay");
+    });
+  }, { threshold: 0.15 });
+  return revealObserver;
+}
+function observeReveal(el) {
+  if (el) ensureRevealObserver().observe(el);
+}
+
 function getOrCreateChart(domId) {
   const el = document.getElementById(domId);
   if (!el) return null;
@@ -69,7 +149,7 @@ function renderMonthlyTrend(monthlyByMunicipio, mesesOrden) {
     });
   }
 
-  chart.setOption({
+  applyChartOption("chart-monthly", chart, {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
     legend: { type: "scroll", top: 0, textStyle: { fontSize: 11 } },
     grid: { left: 40, right: 16, top: 40, bottom: 28 },
@@ -83,7 +163,7 @@ function renderMonthlyTrend(monthlyByMunicipio, mesesOrden) {
 function renderViolenceDonut(conViolencia, sinViolencia) {
   const chart = getOrCreateChart("chart-violence");
   if (!chart) return;
-  chart.setOption({
+  applyChartOption("chart-violence", chart, {
     tooltip: baseTooltip(),
     legend: { bottom: 0, textStyle: { fontSize: 12 } },
     series: [{
@@ -111,7 +191,7 @@ function renderModusDonut(topModus) {
   const valueByName = {};
   data.forEach(d => { valueByName[d.name] = d.value; });
 
-  chart.setOption({
+  applyChartOption("chart-modus", chart, {
     tooltip: baseTooltip(),
     legend: {
       orient: "vertical", right: 4, top: "middle", itemWidth: 10, itemHeight: 10,
@@ -135,11 +215,20 @@ function renderHBar(domId, entries, color) {
   const chart = getOrCreateChart(domId);
   if (!chart) return;
   const data = entries.slice().reverse();
-  chart.setOption({
+  const labels = data.map(([name]) => toTitle(name));
+
+  // Margen izquierdo dinámico: si es fijo (140px) los nombres largos (ej.
+  // "Ixtlahuacan De Los Membrillos") se dibujan empezando fuera del lienzo y
+  // se ven "cortados" por la izquierda. Se calcula en función del nombre más
+  // largo de ESTE set de datos, con un piso y un techo razonables.
+  const maxLabelLen = labels.reduce((m, l) => Math.max(m, l.length), 0);
+  const leftMargin = Math.min(260, Math.max(90, Math.round(maxLabelLen * 6.4) + 26));
+
+  applyChartOption(domId, chart, {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    grid: { left: 140, right: 24, top: 10, bottom: 10 },
+    grid: { left: leftMargin, right: 24, top: 10, bottom: 10 },
     xAxis: { type: "value", splitLine: { lineStyle: { color: "#EEF1F4" } } },
-    yAxis: { type: "category", data: data.map(([name]) => toTitle(name)), axisLabel: { fontSize: 11 } },
+    yAxis: { type: "category", data: labels, axisLabel: { fontSize: 11 } },
     series: [{
       type: "bar", data: data.map(([,v]) => v), barMaxWidth: 16,
       itemStyle: { color: color || PALETTE.blue, borderRadius: [0,4,4,0] },
@@ -194,4 +283,5 @@ window.CGES = window.CGES || {};
 Object.assign(window.CGES, {
   renderMonthlyTrend, renderViolenceDonut, renderModusDonut,
   renderHBar, renderHeatmapTable, toTitle, PALETTE,
+  observeReveal,
 });

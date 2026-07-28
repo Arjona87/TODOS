@@ -26,7 +26,9 @@
 <!-- ============ Barra de estado ============ -->
 <div class="status-bar">
   <div class="container">
-    <div><span class="elaborado-por">Elaborado por: Alejandro Arjona</span> · <span id="status-dot" class="status-dot"></span><span id="status-text">Conectando con la fuente de datos…</span></div>
+    <div><label class="plus-toggle" title="Anima las gráficas al entrar en pantalla mientras haces scroll">
+      <input type="checkbox" id="toggle-plus" checked><span>PLUS +</span>
+    </label> · <span class="elaborado-por">Elaborado por: Alejandro Arjona</span> · <span id="status-dot" class="status-dot"></span><span id="status-text">Conectando con la fuente de datos…</span></div>
     <div>Cifras preliminares · sujetas a actualización</div>
   </div>
 </div>
@@ -34,14 +36,11 @@
 <!-- ============ Header / Portada ============ -->
 <header class="hero">
   <div class="container">
+    <div class="brand">
+      <img src="CGES_logo.png" alt="Coordinación General Estratégica de Seguridad — Gobierno de Jalisco">
+    </div>
     <h1 class="hero-title">Incidencia Delictiva <span class="accent">/</span> Área Metropolitana de Guadalajara</h1>
     <p class="hero-sub">Panel de monitoreo de Incidencia Delictiva en el AMG.</p>
-
-    <div class="hero-controls">
-      <div class="brand">
-        <img src="CGES_logo.png" alt="Coordinación General Estratégica de Seguridad — Gobierno de Jalisco">
-      </div>
-    </div>
   </div>
 </header>
 
@@ -204,7 +203,7 @@
           <tbody id="table-colonias"></tbody>
         </table>
       </div>
-      <div class="card">
+      <div class="card" id="card-ranking-sectores">
         <h3>Ranking detallado de sectores</h3>
         <table class="rank-table">
           <thead><tr><th>Sector</th><th>Eventos</th><th>%</th></tr></thead>

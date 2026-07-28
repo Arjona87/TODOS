@@ -264,6 +264,15 @@ function updateDelitoDependentSections(agg) {
   window.dispatchEvent(new Event("resize"));
 }
 
+// Registra tarjetas no-ECharts (KPIs, heatmap, rankings) en el mismo
+// mecanismo de "PLUS +" para que también se sientan vivas al hacer scroll.
+function observeAliveSections() {
+  document.querySelectorAll("#kpis-section .kpi-card").forEach(el => window.CGES.observeReveal(el));
+  document.querySelectorAll("#temporal-grid .card").forEach(el => window.CGES.observeReveal(el));
+  window.CGES.observeReveal(document.getElementById("card-ranking-colonias"));
+  window.CGES.observeReveal(document.getElementById("card-ranking-sectores"));
+}
+
 /* ---------------------- Render general ---------------------- */
 function renderAll() {
   applyFilters();
@@ -287,6 +296,8 @@ function renderAll() {
   renderRankTable("table-sectores", agg.topSectores, agg.total);
 
   window.CGES.renderMapMarkers(STATE.filtered);
+
+  observeAliveSections();
 }
 
 /* ---------------------- Arranque ---------------------- */
