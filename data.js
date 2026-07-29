@@ -645,6 +645,76 @@ function computeAnomalias(allRecords, filters) {
   return { disponible: items.length > 0, items: items.slice(0, 5), periodoRef: { anio: refAnio, mes: refMes } };
 }
 
+/* -------------------------------------------------------------------------
+   Comparativo mes a mes por municipio (los 9 del AMG), ordenado por orden de
+   impacto — complementa computeAnomalias(): mientras esa función compara
+   cada municipio contra SU PROPIO historial (detección estadística), esta
+   función da la lectura más literal y directa que pidió el usuario: "qué
+   pasó este mes vs. el mes pasado, en cada uno de los 9 municipios".
+
+   "Orden de impacto" = magnitud absoluta del cambio en número de eventos
+   (no en %), porque un incremento de 40 eventos importa operativamente más
+   que uno de 200% que parte de una base de 2 eventos.
+   ------------------------------------------------------------------------- */
+const MUNICIPIOS_AMG_CATALOGO = Object.keys(POBLACION_MUNICIPIOS_RAW);
+
+function computeComparativoMunicipiosMoM(allRecords, filters) {
+  const pasaFiltroBase = r => {
+    if (filters.delito !== "all" && r.delitoEst !== filters.delito) return false;
+    if (filters.violencia !== "all") {
+      const wantViolence = filters.violencia === "con";
+      if (r.conViolencia !== wantViolence) return false;
+    }
+    return true;
+  };
+
+  // Mismo criterio de período de referencia que computeAnomalias().
+  let refAnio = filters.anio, refMes = filters.mes;
+  if (refMes === "all" || refAnio === "all") {
+    let latest = null;
+    allRecords.forEach(r => {
+      if (!pasaFiltroBase(r) || !r.anio || !r.mes) return;
+      const idx = MESES_ORDEN.indexOf(r.mes);
+      if (!latest || r.anio > latest.anio || (r.anio === latest.anio && idx > latest.idx)) {
+        latest = { anio: r.anio, mes: r.mes, idx };
+      }
+    });
+    if (!latest) return { disponible: false, items: [], periodoRef: null, periodoAnterior: null };
+    refAnio = latest.anio; refMes = latest.mes;
+  } else {
+    refAnio = parseInt(refAnio, 10);
+  }
+
+  const refIdx = MESES_ORDEN.indexOf(refMes);
+  let prevMes, prevAnio;
+  if (refIdx > 0) { prevMes = MESES_ORDEN[refIdx - 1]; prevAnio = refAnio; }
+  else { prevMes = MESES_ORDEN[11]; prevAnio = refAnio - 1; }
+
+  const items = MUNICIPIOS_AMG_CATALOGO.map(nombreCanonico => {
+    const claveCanon = normalizarClaveMunicipio(nombreCanonico);
+    let actual = 0, anterior = 0;
+    allRecords.forEach(r => {
+      if (!pasaFiltroBase(r) || !r.anio || !r.mes || !r.municipioGeo) return;
+      if (normalizarClaveMunicipio(r.municipioGeo) !== claveCanon) return;
+      if (r.anio === refAnio && r.mes === refMes) actual++;
+      else if (r.anio === prevAnio && r.mes === prevMes) anterior++;
+    });
+    const delta = actual - anterior;
+    const deltaPct = anterior > 0 ? Math.round((delta / anterior) * 100) : (actual > 0 ? null : 0);
+    return { municipio: nombreCanonico, actual, anterior, delta, deltaPct };
+  });
+
+  // Orden de impacto: magnitud absoluta del cambio, no porcentaje.
+  items.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  return {
+    disponible: true,
+    items,
+    periodoRef: { anio: refAnio, mes: refMes },
+    periodoAnterior: { anio: prevAnio, mes: prevMes },
+  };
+}
+
 // Namespace global simple para que main.js / charts.js / map.js consuman lo mismo.
 window.CGES = window.CGES || {};
 window.CGES.APP_CONFIG = APP_CONFIG;
@@ -652,6 +722,7 @@ window.CGES.SENSITIVE_COLUMNS = SENSITIVE_COLUMNS;
 window.CGES.loadDataset = loadDataset;
 window.CGES.computeAggregates = computeAggregates;
 window.CGES.computeAnomalias = computeAnomalias;
+window.CGES.computeComparativoMunicipiosMoM = computeComparativoMunicipiosMoM;
 window.CGES.poblacionDeMunicipio = poblacionDeMunicipio;
 window.CGES.MESES_ORDEN = MESES_ORDEN;
 window.CGES.DIAS_ORDEN = DIAS_ORDEN;
