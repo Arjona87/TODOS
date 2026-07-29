@@ -258,6 +258,18 @@ function dlBuildConfigs() {
       ],
     },
 
+    anomalias: {
+      filenameBase: "Alertas_Zonas_Atipicas",
+      captureId: "anomalias-section",
+      xlsxSheets: () => {
+        const result = window.CGES.computeAnomalias(STATE.allRecords, STATE.filters);
+        const rows = [["Municipio", "Eventos periodo de referencia", "Promedio histórico", "Desviación estándar", "Z-score"]];
+        result.items.forEach(it => rows.push([window.CGES.toTitle(it.municipio), it.actual, it.media, it.std, it.z]));
+        return [{ name: "Anomalías", rows }];
+      },
+      charts: [],
+    },
+
     delitos: {
       filenameBase: "Distribucion_Por_Delito",
       captureId: "delito-breakdown-section",

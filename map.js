@@ -7,6 +7,8 @@
 
 let LEAFLET_MAP = null;
 let MARKERS_LAYER = null;
+let HEAT_LAYER = null;
+let MAP_VIEW = "points"; // Opción 3: "points" | "heat"
 
 // Municipios del AMG (idéntico al listado documentado en CAPAS_MAPA_COMPLETO.md)
 const MUNICIPIOS_AMG = [
@@ -70,7 +72,50 @@ function initMap() {
   MARKERS_LAYER = L.layerGroup();
   LEAFLET_MAP.addLayer(MARKERS_LAYER);
 
+  wireMapViewToggle();
+
   return LEAFLET_MAP;
+}
+
+// Opción 3 — Mapa de calor (benchmark: Palantir Gotham, C4 Bogotá, C5 CDMX):
+// alterna entre puntos individuales (útil para inspeccionar un evento) y una
+// capa de intensidad por concentración (útil para un vistazo ejecutivo de 2
+// segundos: "¿dónde está el problema?"). Usa las mismas coordenadas lat/lon
+// ya reproyectadas — no requiere ningún cálculo de datos adicional.
+function buildHeatLayer(withGeo) {
+  if (typeof L.heatLayer !== "function") return null; // plugin no cargó (ver index.html)
+  const points = withGeo.map(r => [r.lat, r.lon, 0.55]);
+  if (HEAT_LAYER) LEAFLET_MAP.removeLayer(HEAT_LAYER);
+  HEAT_LAYER = L.heatLayer(points, {
+    radius: 24, blur: 20, maxZoom: 15, minOpacity: 0.35,
+    gradient: { 0.2: "#1B4F91", 0.4: "#2E6DB4", 0.6: "#F5821F", 0.8: "#E8792D", 1.0: "#D64545" },
+  });
+  return HEAT_LAYER;
+}
+
+function applyMapView() {
+  if (!LEAFLET_MAP) return;
+  if (MAP_VIEW === "heat" && HEAT_LAYER) {
+    if (LEAFLET_MAP.hasLayer(MARKERS_LAYER)) LEAFLET_MAP.removeLayer(MARKERS_LAYER);
+    if (!LEAFLET_MAP.hasLayer(HEAT_LAYER)) HEAT_LAYER.addTo(LEAFLET_MAP);
+  } else {
+    if (HEAT_LAYER && LEAFLET_MAP.hasLayer(HEAT_LAYER)) LEAFLET_MAP.removeLayer(HEAT_LAYER);
+    if (!LEAFLET_MAP.hasLayer(MARKERS_LAYER)) MARKERS_LAYER.addTo(LEAFLET_MAP);
+  }
+}
+
+function wireMapViewToggle() {
+  const toggle = document.getElementById("map-view-toggle");
+  if (!toggle || toggle.dataset.wired) return;
+  toggle.dataset.wired = "1";
+  toggle.querySelectorAll(".pill-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      toggle.querySelectorAll(".pill-toggle-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      MAP_VIEW = btn.dataset.mapView;
+      applyMapView();
+    });
+  });
 }
 
 function markerColor(record) {
@@ -125,6 +170,9 @@ function renderMapMarkers(records) {
   if (totalStat) {
     totalStat.textContent = `${withGeo.length} de ${records.length} eventos georreferenciados en el mapa`;
   }
+
+  buildHeatLayer(withGeo);
+  applyMapView();
 
   if (withGeo.length) {
     const bounds = L.latLngBounds(withGeo.map(r => [r.lat, r.lon]));

@@ -91,22 +91,38 @@
         <div class="kpi-icon">🚗</div>
         <div class="kpi-label">Robos totales</div>
         <div class="kpi-value" id="kpi-total">—</div>
+        <div id="kpi-total-delta"></div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon orange">⚠️</div>
         <div class="kpi-label">Con violencia</div>
         <div class="kpi-value" id="kpi-con-violencia">—</div>
+        <div id="kpi-con-violencia-delta"></div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon blue">🛡️</div>
         <div class="kpi-label">Sin violencia</div>
         <div class="kpi-value" id="kpi-sin-violencia">—</div>
+        <div id="kpi-sin-violencia-delta"></div>
       </div>
       <div class="kpi-card">
         <div class="kpi-icon green">%</div>
         <div class="kpi-label">% con violencia</div>
         <div class="kpi-value" id="kpi-pct-violencia">—</div>
+        <div id="kpi-pct-violencia-delta"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ 2a. Alertas de zonas atípicas (gestión por excepción) ============ -->
+  <section class="section" id="anomalias-section">
+    <div class="section-head" data-dl="anomalias">
+      <div class="eyebrow">Gestión por excepción</div>
+      <h2>Alertas de zonas atípicas</h2>
+      <p>Municipios cuyo valor del período de referencia se desvía de forma significativa (±1.5 desviaciones estándar) de su propio promedio histórico mensual — metodología de control estadístico de procesos.</p>
+    </div>
+    <div class="card">
+      <div class="insight warn" id="anomalias-lista">Cargando…</div>
     </div>
   </section>
 
@@ -193,7 +209,12 @@
     <div class="card" style="margin-bottom:18px;" id="card-top-municipios">
       <h3>Top municipios</h3>
       <div class="card-sub">Calculado a partir de la columna geocodificada "MunicipioG" (con respaldo en "MUNICIPIO" si aún no está disponible en la fuente).</div>
+      <div class="pill-toggle" id="municipios-rate-toggle">
+        <button class="pill-toggle-btn active" data-rate-view="absoluto">Cifras absolutas</button>
+        <button class="pill-toggle-btn" data-rate-view="tasa">Tasa por 100k hab.</button>
+      </div>
       <div class="chart-box tall" id="chart-municipios"></div>
+      <div class="card-sub" id="municipios-rate-nota" style="margin-top:8px;"></div>
     </div>
     <div class="grid-2" style="margin-top:18px;">
       <div class="card" id="card-ranking-colonias">
@@ -293,6 +314,10 @@
     <div class="card">
       <div class="map-toolbar">
         <span class="map-stat-pill" id="map-total-stat">Cargando mapa…</span>
+        <div class="pill-toggle" id="map-view-toggle">
+          <button class="pill-toggle-btn active" data-map-view="points">Puntos</button>
+          <button class="pill-toggle-btn" data-map-view="heat">Mapa de calor</button>
+        </div>
       </div>
       <div style="position:relative;">
         <div id="map"></div>
@@ -301,7 +326,7 @@
           <div><span class="legend-dot" style="background:#F5821F;"></span>Con violencia</div>
         </div>
       </div>
-      <div class="map-note">Los filtros globales de la parte superior (año, mes, sector, violencia, marca) también controlan qué puntos se muestran en este mapa.</div>
+      <div class="map-note">Los filtros globales de la parte superior (delito, año, mes, municipio, violencia) también controlan qué puntos se muestran en este mapa.</div>
     </div>
   </section>
 
@@ -346,6 +371,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/leaflet-image@0.4.0/leaflet-image.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>

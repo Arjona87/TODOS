@@ -8,6 +8,7 @@ const STATE = {
   allRecords: [],
   filtered: [],
   filters: { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" },
+  municipioRateView: "absoluto", // Opción 1: "absoluto" | "tasa" (delitos por 100k hab.)
   source: "live",
 };
 
@@ -15,30 +16,76 @@ function fmtNum(n) {
   return (n ?? 0).toLocaleString("es-MX");
 }
 
-function fmtDelta(curr, prev) {
+function fmtDelta(curr, prev, label) {
+  const suffix = label || "vs. periodo anterior";
   if (prev === null || prev === undefined || prev === 0) {
-    return { html: `<span class="kpi-na">Sin periodo previo para comparar</span>`, dir: "flat" };
+    return `<span class="kpi-na">Sin dato ${suffix.replace(/^vs\.?\s*/i, "de ")} para comparar</span>`;
   }
   const pct = Math.round(((curr - prev) / prev) * 100);
   const dir = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
   const arrow = pct > 0 ? "▲" : pct < 0 ? "▼" : "■";
-  return { html: `<span class="kpi-delta ${dir}">${arrow} ${Math.abs(pct)}% vs periodo anterior</span>`, dir };
+  return `<span class="kpi-delta ${dir}">${arrow} ${Math.abs(pct)}% ${suffix}</span>`;
+}
+
+// Predicado puro de filtrado, reutilizado tanto por applyFilters() como por
+// getComparisonAgg() (que necesita aplicar los MISMOS filtros pero con
+// año/mes distintos, para construir el período de comparación).
+function recordMatchesFilters(r, f) {
+  if (f.delito !== "all" && r.delitoEst !== f.delito) return false;
+  if (f.anio !== "all" && String(r.anio) !== String(f.anio)) return false;
+  if (f.mes !== "all" && r.mes !== f.mes) return false;
+  if (f.municipio !== "all" && r.municipioGeo !== f.municipio) return false;
+  if (f.violencia !== "all") {
+    const wantViolence = f.violencia === "con";
+    if (r.conViolencia !== wantViolence) return false;
+  }
+  return true;
 }
 
 /* ---------------------- Filtros ---------------------- */
 function applyFilters() {
+  STATE.filtered = STATE.allRecords.filter(r => recordMatchesFilters(r, STATE.filters));
+}
+
+// Opción 2 — Comparativo período-contra-período estilo CompStat (NYPD):
+// determina automáticamente el período de comparación más relevante según lo
+// que el usuario tenga filtrado (mes+año -> vs. mes anterior; solo año ->
+// vs. año anterior; sin año -> vs. el año previo al más reciente disponible),
+// aplicando los MISMOS demás filtros (delito, municipio, violencia).
+function getComparisonAgg() {
   const f = STATE.filters;
-  STATE.filtered = STATE.allRecords.filter(r => {
-    if (f.delito !== "all" && r.delitoEst !== f.delito) return false;
-    if (f.anio !== "all" && String(r.anio) !== String(f.anio)) return false;
-    if (f.mes !== "all" && r.mes !== f.mes) return false;
-    if (f.municipio !== "all" && r.municipioGeo !== f.municipio) return false;
-    if (f.violencia !== "all") {
-      const wantViolence = f.violencia === "con";
-      if (r.conViolencia !== wantViolence) return false;
+  const all = STATE.allRecords;
+  const mesesOrden = window.CGES.MESES_ORDEN;
+
+  function subsetConOverride(overrides) {
+    const merged = Object.assign({}, f, overrides);
+    return all.filter(r => recordMatchesFilters(r, merged));
+  }
+
+  let cmpRecords = null, label = null;
+  if (f.mes !== "all" && f.anio !== "all") {
+    const anioNum = parseInt(f.anio, 10);
+    const mesIdx = mesesOrden.indexOf(f.mes);
+    let prevMes, prevAnio;
+    if (mesIdx > 0) { prevMes = mesesOrden[mesIdx - 1]; prevAnio = anioNum; }
+    else { prevMes = mesesOrden[11]; prevAnio = anioNum - 1; }
+    cmpRecords = subsetConOverride({ anio: String(prevAnio), mes: prevMes });
+    label = "vs. mes anterior";
+  } else if (f.anio !== "all") {
+    const anioNum = parseInt(f.anio, 10);
+    cmpRecords = subsetConOverride({ anio: String(anioNum - 1), mes: "all" });
+    label = `vs. ${anioNum - 1}`;
+  } else {
+    const years = [...new Set(all.map(r => r.anio))].filter(Boolean).sort((a, b) => a - b);
+    if (years.length >= 2) {
+      const prev = years[years.length - 2];
+      cmpRecords = subsetConOverride({ anio: String(prev), mes: "all" });
+      label = `vs. ${prev}`;
     }
-    return true;
-  });
+  }
+
+  if (!cmpRecords) return null;
+  return { agg: window.CGES.computeAggregates(cmpRecords), label };
 }
 
 function populateFilterOptions() {
@@ -80,6 +127,17 @@ function wireFilterEvents() {
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = "all"; });
     renderAll();
   });
+
+  // Opción 1: toggle Cifras absolutas / Tasa por 100k hab. — solo re-renderiza
+  // la gráfica de municipios (no hace falta recalcular todo el dashboard).
+  document.querySelectorAll("#municipios-rate-toggle .pill-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#municipios-rate-toggle .pill-toggle-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      STATE.municipioRateView = btn.dataset.rateView;
+      if (STATE.lastAgg) renderMunicipiosChart(STATE.lastAgg);
+    });
+  });
 }
 
 /* ---------------------- Render de KPIs y narrativas ---------------------- */
@@ -88,6 +146,19 @@ function renderKPIs(agg) {
   setText("kpi-con-violencia", fmtNum(agg.conViolencia));
   setText("kpi-sin-violencia", fmtNum(agg.sinViolencia));
   setText("kpi-pct-violencia", `${agg.pctConViolencia}%`);
+
+  // Opción 2 (CompStat): comparativo automático contra el período anterior
+  // más relevante según el filtro activo (mes anterior / año anterior).
+  const cmp = getComparisonAgg();
+  if (cmp) {
+    setHtml("kpi-total-delta", fmtDelta(agg.total, cmp.agg.total, cmp.label));
+    setHtml("kpi-con-violencia-delta", fmtDelta(agg.conViolencia, cmp.agg.conViolencia, cmp.label));
+    setHtml("kpi-sin-violencia-delta", fmtDelta(agg.sinViolencia, cmp.agg.sinViolencia, cmp.label));
+    setHtml("kpi-pct-violencia-delta", fmtDelta(agg.pctConViolencia, cmp.agg.pctConViolencia, cmp.label));
+  } else {
+    ["kpi-total-delta","kpi-con-violencia-delta","kpi-sin-violencia-delta","kpi-pct-violencia-delta"]
+      .forEach(id => setHtml(id, `<span class="kpi-na">Sin periodo previo para comparar</span>`));
+  }
 
   document.getElementById("filter-count").textContent =
     `${fmtNum(STATE.filtered.length)} de ${fmtNum(STATE.allRecords.length)} registros bajo el filtro actual`;
@@ -266,11 +337,52 @@ function updateDelitoDependentSections(agg) {
 
 // Registra tarjetas no-ECharts (KPIs, heatmap, rankings) en el mismo
 // mecanismo de "PLUS +" para que también se sientan vivas al hacer scroll.
+// Opción 1 — Top municipios: cifras absolutas vs. tasa por 100k habitantes.
+// Metodología UNODC/FBI-UCR/INEGI para comparar municipios de distinto tamaño
+// de forma justa. Se expone como función aparte (no solo dentro de renderAll)
+// para poder re-renderizar nada más este bloque cuando el usuario cambia el
+// toggle, sin tener que recalcular todo el dashboard.
+function renderMunicipiosChart(agg) {
+  if (STATE.municipioRateView === "tasa") {
+    const entries = agg.topMunicipiosPorTasa.slice(0, 10).map(d => [d.nombre, d.tasa]);
+    window.CGES.renderHBar("chart-municipios", entries, window.CGES.PALETTE.blueLight);
+    const sinPoblacion = agg.topMunicipios.length - agg.topMunicipiosPorTasa.length;
+    setHtml("municipios-rate-nota",
+      `Delitos por cada 100,000 habitantes (población: Censo INEGI 2020, vía IIEG Jalisco). ` +
+      `Metodología usada para comparar municipios de distinto tamaño de forma justa (mismo criterio que INEGI/ONU-UNODC).` +
+      (sinPoblacion > 0 ? ` ${sinPoblacion} municipio(s) sin población catalogada no aparecen en esta vista.` : ""));
+  } else {
+    window.CGES.renderHBar("chart-municipios", agg.topMunicipios, window.CGES.PALETTE.navy);
+    setHtml("municipios-rate-nota", "");
+  }
+}
+
+// Opción 4 — Alertas de zonas atípicas (gestión por excepción / control
+// estadístico de procesos). Ver computeAnomalias() en data.js.
+function updateAnomalias() {
+  const result = window.CGES.computeAnomalias(STATE.allRecords, STATE.filters);
+  if (!result.disponible) {
+    setHtml("anomalias-lista",
+      `<span class="not-available">Aún no hay suficiente historial mensual por municipio (se necesitan al menos 3 meses previos de datos) para detectar zonas atípicas bajo este filtro — esta sección se poblará automáticamente conforme el Sheet acumule más meses.</span>`);
+    return;
+  }
+  const periodoTxt = result.periodoRef ? `${window.CGES.toTitle(result.periodoRef.mes)} ${result.periodoRef.anio}` : "";
+  const rows = result.items.map(it => {
+    const dir = it.z > 0 ? "up" : "down";
+    const arrow = it.z > 0 ? "▲" : "▼";
+    const pct = it.media ? Math.round(((it.actual - it.media) / it.media) * 100) : 0;
+    return `<div style="margin-bottom:8px;"><b>${window.CGES.toTitle(it.municipio)}</b>: ${fmtNum(it.actual)} eventos en ${periodoTxt} — ` +
+      `<span class="kpi-delta ${dir}">${arrow} ${Math.abs(pct)}% sobre su promedio histórico (${it.media})</span></div>`;
+  }).join("");
+  setHtml("anomalias-lista", `<div style="margin-bottom:8px; color:var(--gray-text); font-size:12.5px;">Período de referencia: <b>${periodoTxt}</b>. Umbral: ±1.5 desviaciones estándar sobre el historial propio de cada municipio.</div>${rows}`);
+}
+
 function observeAliveSections() {
   document.querySelectorAll("#kpis-section .kpi-card").forEach(el => window.CGES.observeReveal(el));
   document.querySelectorAll("#temporal-grid .card").forEach(el => window.CGES.observeReveal(el));
   window.CGES.observeReveal(document.getElementById("card-ranking-colonias"));
   window.CGES.observeReveal(document.getElementById("card-ranking-sectores"));
+  window.CGES.observeReveal(document.getElementById("anomalias-lista"));
 }
 
 /* ---------------------- Render general ---------------------- */
@@ -281,11 +393,12 @@ function renderAll() {
 
   renderKPIs(agg);
   renderInsights(agg);
+  updateAnomalias();
 
   window.CGES.renderMonthlyTrend(agg.monthlyByMunicipio, window.CGES.MESES_ORDEN);
   window.CGES.renderViolenceDonut(agg.conViolencia, agg.sinViolencia);
   window.CGES.renderModusDonut(agg.topModus);
-  window.CGES.renderHBar("chart-municipios", agg.topMunicipios, window.CGES.PALETTE.navy);
+  renderMunicipiosChart(agg);
 
   updateDelitoDependentSections(agg);
 

@@ -90,6 +90,18 @@ img{max-width:100%;display:block;}
 }
 .cges-replay{ animation: cgesPulseIn .55s ease; }
 
+/* Toggle tipo "pill" reutilizable (Opción 1: tasa por 100k hab. / Opción 3: mapa de calor) */
+.pill-toggle{
+  display:inline-flex; gap:2px; background:var(--gray-bg); border:1px solid var(--gray-line);
+  border-radius:999px; padding:3px; margin:10px 0;
+}
+.pill-toggle-btn{
+  border:none; background:transparent; padding:6px 14px; border-radius:999px;
+  font-size:12px; font-weight:600; color:var(--gray-text); cursor:pointer; transition:background .15s, color .15s;
+}
+.pill-toggle-btn.active{ background:var(--navy); color:#fff; }
+.pill-toggle-btn:hover:not(.active){ background:var(--gray-card); }
+
 /* ---------- Header / Portada ---------- */
 header.hero{
   position:relative;

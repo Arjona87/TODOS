@@ -59,6 +59,42 @@ const DELITOS_VEHICULARES = [
 ];
 
 /* -------------------------------------------------------------------------
+   POBLACIÓN POR MUNICIPIO (Censo de Población y Vivienda 2020, INEGI, vía
+   ficha "Área Metropolitana de Guadalajara" del IIEG Jalisco). Fuente oficial
+   usada para poder comparar municipios de distinto tamaño mediante tasas por
+   cada 100,000 habitantes (misma metodología que INEGI/ONU-UNODC/FBI UCR),
+   en vez de solo cifras absolutas que siempre favorecen a los municipios más
+   grandes. Actualizar aquí si se dispone de una proyección más reciente.
+   ------------------------------------------------------------------------- */
+function normalizarClaveMunicipio(str) {
+  return (str || "")
+    .toString()
+    .toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quita acentos y la tilde de la Ñ
+    .trim();
+}
+
+const POBLACION_MUNICIPIOS_RAW = {
+  "ZAPOPAN": 1476491,
+  "GUADALAJARA": 1385629,
+  "TLAJOMULCO DE ZUÑIGA": 727750,
+  "SAN PEDRO TLAQUEPAQUE": 687127,
+  "TONALA": 569913,
+  "EL SALTO": 232852,
+  "IXTLAHUACAN DE LOS MEMBRILLOS": 67969,
+  "ZAPOTLANEJO": 64806,
+  "JUANACATLAN": 30855,
+};
+const POBLACION_MUNICIPIOS = {};
+Object.entries(POBLACION_MUNICIPIOS_RAW).forEach(([k, v]) => {
+  POBLACION_MUNICIPIOS[normalizarClaveMunicipio(k)] = v;
+});
+
+function poblacionDeMunicipio(nombreMunicipio) {
+  return POBLACION_MUNICIPIOS[normalizarClaveMunicipio(nombreMunicipio)] || null;
+}
+
+/* -------------------------------------------------------------------------
    1) MAPEO DE COLUMNAS (confirmado contra el Sheet real — ver data-mapping.md)
    ------------------------------------------------------------------------- */
 const COLUMN_MAP = {
@@ -387,6 +423,19 @@ function computeAggregates(records) {
   records.forEach(r => { municipios[r.municipioGeo] = (municipios[r.municipioGeo] || 0) + 1; });
   const topMunicipios = Object.entries(municipios).sort((a,b)=>b[1]-a[1]).slice(0,10);
 
+  // --- Top municipios normalizado por tasa (delitos por cada 100k hab.) ---
+  // Evita que Guadalajara/Zapopan "ganen" el ranking solo por ser más grandes.
+  const topMunicipiosPorTasa = Object.entries(municipios)
+    .map(([nombre, count]) => {
+      const poblacion = poblacionDeMunicipio(nombre);
+      return {
+        nombre, count, poblacion,
+        tasa: poblacion ? Math.round((count / poblacion) * 100000 * 10) / 10 : null,
+      };
+    })
+    .filter(d => d.tasa !== null)
+    .sort((a, b) => b.tasa - a.tasa);
+
   // Mensual por municipio (para la gráfica de barras apiladas)
   const monthlyByMunicipio = {};
   records.forEach(r => {
@@ -509,7 +558,7 @@ function computeAggregates(records) {
     pctConViolencia: total ? Math.round((conViolencia/total)*100) : 0,
     pctSinViolencia: total ? Math.round((sinViolencia/total)*100) : 0,
     monthlyByYear, monthlyByMunicipio,
-    topMunicipios, topColonias, topColoniasDetalle, topSectores, topMarcas, topSubmarcas, topModus,
+    topMunicipios, topMunicipiosPorTasa, topColonias, topColoniasDetalle, topSectores, topMarcas, topSubmarcas, topModus,
     heatmapViolencia, heatmapSinViolencia,
     situacionesDisponibles,
     topDelitos,
@@ -521,12 +570,89 @@ function computeAggregates(records) {
   };
 }
 
+/* -------------------------------------------------------------------------
+   7) ALERTAS DE ZONAS ATÍPICAS (gestión por excepción)
+   -------------------------------------------------------------------------
+   Metodología de control estadístico de procesos (la misma familia que Six
+   Sigma o los dashboards de monitoreo tipo SRE/SOC): en vez de comparar un
+   municipio contra otros, se compara contra SU PROPIO historial mensual — se
+   marca como atípico cuando el valor del período de referencia se desvía más
+   de 1.5 desviaciones estándar de su propia media histórica. Es una forma
+   más justa de detectar "algo raro está pasando aquí" que un ranking simple.
+
+   Respeta los filtros de Delito y Violencia (tiene sentido comparar "Robo a
+   Negocio con violencia" contra su propio historial), pero IGNORA los
+   filtros de Año/Mes para construir el historial (necesita todos los
+   períodos disponibles) y usa como "período de referencia" el mes+año que el
+   usuario tenga filtrado — o, si no filtró un mes específico, el mes más
+   reciente disponible en los datos.
+   ------------------------------------------------------------------------- */
+function computeAnomalias(allRecords, filters) {
+  const pasaFiltroBase = r => {
+    if (filters.delito !== "all" && r.delitoEst !== filters.delito) return false;
+    if (filters.violencia !== "all") {
+      const wantViolence = filters.violencia === "con";
+      if (r.conViolencia !== wantViolence) return false;
+    }
+    return true;
+  };
+
+  // Serie histórica mensual por municipio.
+  const seriePorMunicipio = {};
+  allRecords.forEach(r => {
+    if (!pasaFiltroBase(r) || !r.anio || !r.mes) return;
+    const key = r.municipioGeo || "SIN DATO";
+    const periodo = `${r.anio}-${r.mes}`;
+    seriePorMunicipio[key] = seriePorMunicipio[key] || {};
+    seriePorMunicipio[key][periodo] = (seriePorMunicipio[key][periodo] || 0) + 1;
+  });
+
+  // Determina el período de referencia.
+  let refAnio = filters.anio, refMes = filters.mes;
+  if (refMes === "all" || refAnio === "all") {
+    let latest = null;
+    allRecords.forEach(r => {
+      if (!pasaFiltroBase(r) || !r.anio || !r.mes) return;
+      const idx = MESES_ORDEN.indexOf(r.mes);
+      if (!latest || r.anio > latest.anio || (r.anio === latest.anio && idx > latest.idx)) {
+        latest = { anio: r.anio, mes: r.mes, idx };
+      }
+    });
+    if (!latest) return { disponible: false, items: [], periodoRef: null };
+    refAnio = latest.anio; refMes = latest.mes;
+  } else {
+    refAnio = parseInt(refAnio, 10);
+  }
+
+  const refKey = `${refAnio}-${refMes}`;
+  const items = [];
+  Object.entries(seriePorMunicipio).forEach(([municipio, serie]) => {
+    const periodosPrevios = Object.keys(serie).filter(k => k !== refKey);
+    if (periodosPrevios.length < 3) return; // no hay suficiente historial todavía
+    const valores = periodosPrevios.map(k => serie[k]);
+    const media = valores.reduce((a, b) => a + b, 0) / valores.length;
+    const varianza = valores.reduce((a, b) => a + Math.pow(b - media, 2), 0) / valores.length;
+    const std = Math.sqrt(varianza);
+    if (std === 0) return;
+    const actual = serie[refKey] || 0;
+    const z = (actual - media) / std;
+    if (Math.abs(z) >= 1.5) {
+      items.push({ municipio, actual, media: Math.round(media * 10) / 10, std: Math.round(std * 10) / 10, z: Math.round(z * 100) / 100 });
+    }
+  });
+  items.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+
+  return { disponible: items.length > 0, items: items.slice(0, 5), periodoRef: { anio: refAnio, mes: refMes } };
+}
+
 // Namespace global simple para que main.js / charts.js / map.js consuman lo mismo.
 window.CGES = window.CGES || {};
 window.CGES.APP_CONFIG = APP_CONFIG;
 window.CGES.SENSITIVE_COLUMNS = SENSITIVE_COLUMNS;
 window.CGES.loadDataset = loadDataset;
 window.CGES.computeAggregates = computeAggregates;
+window.CGES.computeAnomalias = computeAnomalias;
+window.CGES.poblacionDeMunicipio = poblacionDeMunicipio;
 window.CGES.MESES_ORDEN = MESES_ORDEN;
 window.CGES.DIAS_ORDEN = DIAS_ORDEN;
 window.CGES.DELITOS_CATALOGO = DELITOS_CATALOGO;
