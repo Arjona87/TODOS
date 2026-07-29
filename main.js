@@ -8,7 +8,6 @@ const STATE = {
   allRecords: [],
   filtered: [],
   filters: { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" },
-  municipioRateView: "absoluto", // Opción 1: "absoluto" | "tasa" (delitos por 100k hab.)
   source: "live",
 };
 
@@ -126,17 +125,6 @@ function wireFilterEvents() {
     ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = "all"; });
     renderAll();
-  });
-
-  // Opción 1: toggle Cifras absolutas / Tasa por 100k hab. — solo re-renderiza
-  // la gráfica de municipios (no hace falta recalcular todo el dashboard).
-  document.querySelectorAll("#municipios-rate-toggle .pill-toggle-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#municipios-rate-toggle .pill-toggle-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      STATE.municipioRateView = btn.dataset.rateView;
-      if (STATE.lastAgg) renderMunicipiosChart(STATE.lastAgg);
-    });
   });
 }
 
@@ -342,19 +330,16 @@ function updateDelitoDependentSections(agg) {
 // de forma justa. Se expone como función aparte (no solo dentro de renderAll)
 // para poder re-renderizar nada más este bloque cuando el usuario cambia el
 // toggle, sin tener que recalcular todo el dashboard.
+// Combina cifra absoluta + tasa por 100k hab. en una sola gráfica (2 barras
+// por municipio, doble eje). Ver renderMunicipiosCombo() en charts.js para
+// el detalle de por qué se necesita doble eje (unidades muy distintas).
 function renderMunicipiosChart(agg) {
-  if (STATE.municipioRateView === "tasa") {
-    const entries = agg.topMunicipiosPorTasa.slice(0, 10).map(d => [d.nombre, d.tasa]);
-    window.CGES.renderHBar("chart-municipios", entries, window.CGES.PALETTE.blueLight);
-    const sinPoblacion = agg.topMunicipios.length - agg.topMunicipiosPorTasa.length;
-    setHtml("municipios-rate-nota",
-      `Delitos por cada 100,000 habitantes (población: Censo INEGI 2020, vía IIEG Jalisco). ` +
-      `Metodología usada para comparar municipios de distinto tamaño de forma justa (mismo criterio que INEGI/ONU-UNODC).` +
-      (sinPoblacion > 0 ? ` ${sinPoblacion} municipio(s) sin población catalogada no aparecen en esta vista.` : ""));
-  } else {
-    window.CGES.renderHBar("chart-municipios", agg.topMunicipios, window.CGES.PALETTE.navy);
-    setHtml("municipios-rate-nota", "");
-  }
+  window.CGES.renderMunicipiosCombo(agg.topMunicipios, agg.topMunicipiosPorTasa);
+  const sinPoblacion = agg.topMunicipios.length - agg.topMunicipiosPorTasa.length;
+  setHtml("municipios-rate-nota",
+    `<b style="color:var(--navy);">■</b> Cifra absoluta de eventos &nbsp;·&nbsp; <b style="color:${window.CGES.PALETTE.blueLight};">■</b> Tasa por cada 100,000 habitantes ` +
+    `(población: Censo INEGI 2020, vía IIEG Jalisco) — metodología usada para comparar municipios de distinto tamaño de forma justa (mismo criterio que INEGI/ONU-UNODC).` +
+    (sinPoblacion > 0 ? ` ${sinPoblacion} municipio(s) sin población catalogada no muestran barra de tasa.` : ""));
 }
 
 // Opción 4 — Alertas de zonas atípicas (gestión por excepción / control
