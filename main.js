@@ -348,7 +348,17 @@ function updateDelitoDependentSections(agg) {
 // por municipio, doble eje). Ver renderMunicipiosCombo() en charts.js para
 // el detalle de por qué se necesita doble eje (unidades muy distintas).
 function renderMunicipiosChart(agg) {
-  window.CGES.renderMunicipiosCombo(agg.topMunicipios, agg.topMunicipiosPorTasa);
+  if (typeof window.CGES.renderMunicipiosCombo === "function") {
+    window.CGES.renderMunicipiosCombo(agg.topMunicipios, agg.topMunicipiosPorTasa);
+  } else {
+    // Respaldo si charts.js todavía es una versión anterior (sin la gráfica
+    // combinada) — evita que todo el dashboard truene por un solo archivo
+    // desactualizado; muestra al menos la cifra absoluta.
+    console.warn("window.CGES.renderMunicipiosCombo no existe — charts.js parece ser una versión anterior. Sube el charts.js más reciente.");
+    if (typeof window.CGES.renderHBar === "function") {
+      window.CGES.renderHBar("chart-municipios", agg.topMunicipios, window.CGES.PALETTE.navy);
+    }
+  }
   const sinPoblacion = agg.topMunicipios.length - agg.topMunicipiosPorTasa.length;
   setHtml("municipios-rate-nota",
     `<b style="color:var(--navy);">■</b> Cifra absoluta de eventos &nbsp;·&nbsp; <b style="color:${window.CGES.PALETTE.blueLight};">■</b> Tasa por cada 100,000 habitantes ` +
@@ -422,34 +432,46 @@ function observeAliveSections() {
   window.CGES.observeReveal(document.getElementById("anomalias-lista"));
 }
 
+// Ejecuta un bloque de render de forma aislada: si truena (ej. por un
+// archivo desactualizado que no trae una función nueva), se registra en
+// consola con nombre del bloque y el dashboard sigue renderizando el resto,
+// en vez de que un solo fallo tumbe toda la página con el mensaje genérico
+// de "no se pudo cargar" (que además era engañoso: no era un problema de
+// datos, sino de una función faltante).
+function safeCall(nombreBloque, fn) {
+  try { fn(); } catch (e) { console.error(`Error renderizando "${nombreBloque}":`, e); }
+}
+
 /* ---------------------- Render general ---------------------- */
 function renderAll() {
   applyFilters();
   const agg = window.CGES.computeAggregates(STATE.filtered);
   STATE.lastAgg = agg;
 
-  renderKPIs(agg);
-  renderInsights(agg);
-  updateAnomalias();
+  safeCall("KPIs", () => renderKPIs(agg));
+  safeCall("Insights narrativos", () => renderInsights(agg));
+  safeCall("Alertas de zonas atípicas", () => updateAnomalias());
 
-  window.CGES.renderMonthlyTrend(agg.monthlyByMunicipio, window.CGES.MESES_ORDEN);
-  window.CGES.renderViolenceDonut(agg.conViolencia, agg.sinViolencia);
-  window.CGES.renderModusDonut(agg.topModus);
-  renderMunicipiosChart(agg);
+  safeCall("Comparativo mensual", () => window.CGES.renderMonthlyTrend(agg.monthlyByMunicipio, window.CGES.MESES_ORDEN));
+  safeCall("Dona de violencia", () => window.CGES.renderViolenceDonut(agg.conViolencia, agg.sinViolencia));
+  safeCall("Dona de modus operandi", () => window.CGES.renderModusDonut(agg.topModus));
+  safeCall("Gráfica de municipios", () => renderMunicipiosChart(agg));
 
-  updateDelitoDependentSections(agg);
+  safeCall("Secciones dependientes del delito", () => updateDelitoDependentSections(agg));
 
-  window.CGES.renderHeatmapTable("heatmap-violencia", agg.heatmapViolencia, window.CGES.DIAS_ORDEN, "orange");
-  window.CGES.renderHeatmapTable("heatmap-sin-violencia", agg.heatmapSinViolencia, window.CGES.DIAS_ORDEN, "blue");
+  safeCall("Heatmap con violencia", () => window.CGES.renderHeatmapTable("heatmap-violencia", agg.heatmapViolencia, window.CGES.DIAS_ORDEN, "orange"));
+  safeCall("Heatmap sin violencia", () => window.CGES.renderHeatmapTable("heatmap-sin-violencia", agg.heatmapSinViolencia, window.CGES.DIAS_ORDEN, "blue"));
 
-  const comparativoDetallado = window.CGES.computeComparativoDetallado(STATE.allRecords, STATE.filters);
-  renderComparativoDetalladoNota(comparativoDetallado);
-  renderColoniasTable("table-colonias", agg.topColoniasDetalle, agg.total, comparativoDetallado.porColonia);
-  renderRankTable("table-sectores", agg.topSectores, agg.total, comparativoDetallado.porSector);
+  safeCall("Tablas de colonias y sectores", () => {
+    const comparativoDetallado = window.CGES.computeComparativoDetallado(STATE.allRecords, STATE.filters);
+    renderComparativoDetalladoNota(comparativoDetallado);
+    renderColoniasTable("table-colonias", agg.topColoniasDetalle, agg.total, comparativoDetallado.porColonia);
+    renderRankTable("table-sectores", agg.topSectores, agg.total, comparativoDetallado.porSector);
+  });
 
-  window.CGES.renderMapMarkers(STATE.filtered);
+  safeCall("Mapa dinámico", () => window.CGES.renderMapMarkers(STATE.filtered));
 
-  observeAliveSections();
+  safeCall("Efecto PLUS+ (reveal)", () => observeAliveSections());
 }
 
 /* ---------------------- Arranque ---------------------- */
@@ -476,8 +498,10 @@ async function boot() {
     renderAll();
   } catch (fatal) {
     statusDot.className = "status-dot err";
-    statusText.textContent = "No fue posible cargar datos (ni en vivo ni de respaldo).";
-    console.error(fatal);
+    statusText.textContent =
+      `Ocurrió un error al iniciar el dashboard: "${fatal && fatal.message ? fatal.message : fatal}". ` +
+      `Esto casi siempre significa que uno de los archivos JS (data.js/charts.js/map.js/main.js) no es la versión más reciente — revisa la consola del navegador (F12 → Console) para ver el detalle completo.`;
+    console.error("Fallo en boot():", fatal);
   } finally {
     overlay.classList.add("hide");
     setTimeout(() => overlay.remove(), 500);
