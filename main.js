@@ -198,31 +198,48 @@ function setHtml(id, html) {
 }
 
 /* ---------------------- Tablas de ranking ---------------------- */
-function renderRankTable(tbodyId, entries, total) {
+function fmtDeltaCelda(delta) {
+  if (!delta) return `<span class="kpi-na">Sin dato</span>`;
+  const dir = delta.delta > 0 ? "up" : delta.delta < 0 ? "down" : "flat";
+  const arrow = delta.delta > 0 ? "▲" : delta.delta < 0 ? "▼" : "■";
+  const pctTxt = delta.deltaPct === null ? "" : ` (${delta.deltaPct > 0 ? "+" : ""}${delta.deltaPct}%)`;
+  return `<span class="kpi-delta ${dir}">${arrow} ${delta.delta > 0 ? "+" : ""}${delta.delta}${pctTxt}</span>`;
+}
+
+function renderRankTable(tbodyId, entries, total, comparativoPorClave) {
   const el = document.getElementById(tbodyId);
   if (!el) return;
   const max = entries.length ? entries[0][1] : 1;
-  el.innerHTML = entries.map(([name, value]) => `
+  el.innerHTML = entries.map(([name, value]) => {
+    const delta = comparativoPorClave ? comparativoPorClave[name] : null;
+    return `
     <tr>
       <td class="bar-cell"><div class="bar" style="width:${(value/max*100).toFixed(0)}%"></div><span>${window.CGES.toTitle(name)}</span></td>
       <td>${fmtNum(value)}</td>
       <td>${total ? Math.round(value/total*100) : 0}%</td>
-    </tr>`).join("");
+      <td>${fmtDeltaCelda(delta)}</td>
+    </tr>`;
+  }).join("");
 }
 
 // Tabla de colonias con columna de Municipio en primer lugar, para
 // desambiguar colonias homónimas entre municipios (ej. "Centro").
-function renderColoniasTable(tbodyId, detalle, total) {
+function renderColoniasTable(tbodyId, detalle, total, comparativoPorClave) {
   const el = document.getElementById(tbodyId);
   if (!el) return;
   const max = detalle.length ? detalle[0].count : 1;
-  el.innerHTML = detalle.map(d => `
+  el.innerHTML = detalle.map(d => {
+    const clave = `${d.municipio}|||${d.colonia}`;
+    const delta = comparativoPorClave ? comparativoPorClave[clave] : null;
+    return `
     <tr>
       <td>${window.CGES.toTitle(d.municipio)}</td>
       <td class="bar-cell"><div class="bar" style="width:${(d.count/max*100).toFixed(0)}%"></div><span>${window.CGES.toTitle(d.colonia)}</span></td>
       <td>${fmtNum(d.count)}</td>
       <td>${total ? Math.round(d.count/total*100) : 0}%</td>
-    </tr>`).join("");
+      <td>${fmtDeltaCelda(delta)}</td>
+    </tr>`;
+  }).join("");
 }
 
 /* ---------------------------------------------------------------------
@@ -384,6 +401,19 @@ function updateAnomalias() {
   setHtml("anomalias-lista", html);
 }
 
+// Explica, debajo de "Top municipios", qué criterio se usó para la columna
+// "vs. mes ant." de las tablas de colonias/sectores: mes completo o
+// Month-to-Date (MTD), según lo que realmente exista capturado en el Sheet.
+function renderComparativoDetalladoNota(c) {
+  if (!c.disponible) { setHtml("colonias-mtd-nota", ""); return; }
+  const refTxt = `${window.CGES.toTitle(c.periodoRef.mes)} ${c.periodoRef.anio}`;
+  const prevTxt = `${window.CGES.toTitle(c.periodoAnterior.mes)} ${c.periodoAnterior.anio}`;
+  const metodo = c.esCompleto
+    ? `mes completo (${c.totalDiasRef} días) de <b>${refTxt}</b> vs. mes completo de <b>${prevTxt}</b>`
+    : `primeros <b>${c.corteDia}</b> días de <b>${refTxt}</b> (aún en captura) vs. los primeros ${c.corteDia} días de <b>${prevTxt}</b> — comparación "Month-to-Date"`;
+  setHtml("colonias-mtd-nota", `Columna "vs. mes ant.": ${metodo}.`);
+}
+
 function observeAliveSections() {
   document.querySelectorAll("#kpis-section .kpi-card").forEach(el => window.CGES.observeReveal(el));
   document.querySelectorAll("#temporal-grid .card").forEach(el => window.CGES.observeReveal(el));
@@ -412,8 +442,10 @@ function renderAll() {
   window.CGES.renderHeatmapTable("heatmap-violencia", agg.heatmapViolencia, window.CGES.DIAS_ORDEN, "orange");
   window.CGES.renderHeatmapTable("heatmap-sin-violencia", agg.heatmapSinViolencia, window.CGES.DIAS_ORDEN, "blue");
 
-  renderColoniasTable("table-colonias", agg.topColoniasDetalle, agg.total);
-  renderRankTable("table-sectores", agg.topSectores, agg.total);
+  const comparativoDetallado = window.CGES.computeComparativoDetallado(STATE.allRecords, STATE.filters);
+  renderComparativoDetalladoNota(comparativoDetallado);
+  renderColoniasTable("table-colonias", agg.topColoniasDetalle, agg.total, comparativoDetallado.porColonia);
+  renderRankTable("table-sectores", agg.topSectores, agg.total, comparativoDetallado.porSector);
 
   window.CGES.renderMapMarkers(STATE.filtered);
 
