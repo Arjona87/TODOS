@@ -23,10 +23,11 @@ const CHART_INSTANCES = {};
    Controlado por el checkbox #toggle-plus (marcado por default). Cada
    gráfica de ECharts guarda su última "option" calculada; cuando su
    contenedor entra en pantalla (subiendo o bajando el scroll), se vuelve a
-   aplicar esa misma option con notMerge:true, lo que hace que ECharts la
-   trate como datos nuevos y repita la animación de entrada (barras creciendo
-   desde su eje base, donas barriéndose). Con cooldown de 1s por gráfica para
-   no disparar en cascada si el usuario hace scroll rápido de un lado a otro.
+   aplicar esa misma option, pero primero con chart.clear() — esto fuerza a
+   ECharts a desechar el estado interno anterior y reconstruir desde cero, lo
+   cual es necesario para que la animación de entrada se repita: si solo se
+   usara setOption (incluso con notMerge:true) sobre los MISMOS valores,
+   ECharts detecta que no hay cambio real en los datos y no anima nada.
    ========================================================================= */
 const CHART_LAST_OPTION = {};
 const CHART_LAST_REPLAY = {};
@@ -50,7 +51,8 @@ function ensureChartObserver() {
       const now = Date.now();
       if (CHART_LAST_REPLAY[domId] && now - CHART_LAST_REPLAY[domId] < PLUS_REPLAY_COOLDOWN_MS) return;
       CHART_LAST_REPLAY[domId] = now;
-      inst.setOption(opt, { notMerge: true });
+      inst.clear();
+      inst.setOption(opt);
     });
   }, { threshold: 0.2 });
   return chartObserver;
@@ -61,7 +63,8 @@ function ensureChartObserver() {
 // mecanismo de repetición por scroll.
 function applyChartOption(domId, chart, option) {
   CHART_LAST_OPTION[domId] = option;
-  chart.setOption(option, { notMerge: true });
+  chart.clear();
+  chart.setOption(option);
   const el = document.getElementById(domId);
   if (el && !el.dataset.chartObserved) {
     el.dataset.chartId = domId;
