@@ -405,7 +405,7 @@ async function loadDataset() {
 const MESES_ORDEN = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
   "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 
-function computeAggregates(records) {
+function computeAggregates(records, monthlyAnio) {
   const total = records.length;
   const conViolencia = records.filter(r => r.conViolencia).length;
   const sinViolencia = total - conViolencia;
@@ -436,10 +436,12 @@ function computeAggregates(records) {
     .filter(d => d.tasa !== null)
     .sort((a, b) => b.tasa - a.tasa);
 
-  // Mensual por municipio (para la gráfica de barras apiladas)
+  // Mensual por municipio (para la gráfica de barras apiladas). Filtrado por
+  // el año elegido en el dropdown propio de la sección (#filter-monthly-anio,
+  // ver main.js); si monthlyAnio es null/undefined, no filtra por año.
   const monthlyByMunicipio = {};
   records.forEach(r => {
-    if (!r.mes) return;
+    if (!r.mes || (monthlyAnio && r.anio !== monthlyAnio)) return;
     monthlyByMunicipio[r.mes] = monthlyByMunicipio[r.mes] || {};
     const mun = r.municipioGeo || "SIN DATO";
     monthlyByMunicipio[r.mes][mun] = (monthlyByMunicipio[r.mes][mun] || 0) + 1;
@@ -453,14 +455,14 @@ function computeAggregates(records) {
     if (!coloniasDetalle[key]) coloniasDetalle[key] = { municipio: r.municipio, colonia: r.colonia, count: 0 };
     coloniasDetalle[key].count++;
   });
-  const topColoniasDetalle = Object.values(coloniasDetalle).sort((a,b)=>b.count-a.count).slice(0,10);
+  const topColoniasDetalle = Object.values(coloniasDetalle).sort((a,b)=>b.count-a.count).slice(0,15);
   // Formato [nombre, valor] para reutilizar la gráfica de barras genérica.
   const topColonias = topColoniasDetalle.map(d => [`${d.colonia} — ${d.municipio}`, d.count]);
 
   // Sectores
   const sectores = {};
   records.forEach(r => { sectores[r.sector] = (sectores[r.sector] || 0) + 1; });
-  const topSectores = Object.entries(sectores).sort((a,b)=>b[1]-a[1]);
+  const topSectores = Object.entries(sectores).sort((a,b)=>b[1]-a[1]).slice(0,15);
 
   // Marcas / submarcas
   const marcas = {};

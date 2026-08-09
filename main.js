@@ -9,6 +9,7 @@ const STATE = {
   filtered: [],
   filters: { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" },
   source: "live",
+  monthlyAnio: null, // año seleccionado en el dropdown propio de "Robos de vehículo por mes"
 };
 
 function fmtNum(n) {
@@ -99,6 +100,20 @@ function populateFilterOptions() {
   fillSelect("filter-anio", years, "Todos los años");
   fillSelect("filter-mes", window.CGES.MESES_ORDEN, "Todos los meses", window.CGES.toTitle);
   fillSelect("filter-municipio", municipios, "Todos los municipios", window.CGES.toTitle);
+
+  populateMonthlyAnioSelect(years);
+}
+
+// Dropdown propio de "Robos de vehículo por mes" (independiente del filtro
+// global de Año): se llena con todos los años presentes en los datos y
+// selecciona 2026 por default; si 2026 no existiera, cae al año más reciente.
+function populateMonthlyAnioSelect(years) {
+  const el = document.getElementById("filter-monthly-anio");
+  if (!el || !years.length) return;
+  el.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+  const defaultYear = years.includes(2026) ? 2026 : years[years.length - 1];
+  el.value = String(defaultYear);
+  STATE.monthlyAnio = defaultYear;
 }
 
 function fillSelect(id, values, placeholderLabel, labelFn) {
@@ -124,6 +139,12 @@ function wireFilterEvents() {
     STATE.filters = { delito: "all", anio: "all", mes: "all", municipio: "all", violencia: "all" };
     ["filter-delito","filter-anio","filter-mes","filter-municipio","filter-violencia"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = "all"; });
+    renderAll();
+  });
+
+  const elMonthlyAnio = document.getElementById("filter-monthly-anio");
+  if (elMonthlyAnio) elMonthlyAnio.addEventListener("change", () => {
+    STATE.monthlyAnio = parseInt(elMonthlyAnio.value, 10);
     renderAll();
   });
 }
@@ -373,7 +394,7 @@ function observeAliveSections() {
 /* ---------------------- Render general ---------------------- */
 function renderAll() {
   applyFilters();
-  const agg = window.CGES.computeAggregates(STATE.filtered);
+  const agg = window.CGES.computeAggregates(STATE.filtered, STATE.monthlyAnio);
   STATE.lastAgg = agg;
 
   renderKPIs(agg);
