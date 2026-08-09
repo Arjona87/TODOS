@@ -214,6 +214,14 @@ function renderModusDonut(topModus) {
 }
 
 /* ---------------------- 4. Barras horizontales genéricas ---------------------- */
+// Nota: esta función alimenta TODAS las gráficas de barras horizontales del
+// dashboard (marcas, submarcas, objetos robados, medio de transporte, giro
+// comercial, tipos de robo). Si alguna trae una fila "SIN DATO" cuyo valor
+// real es mucho mayor al resto, esa fila distorsiona la escala y no deja ver
+// las categorías con datos reales. Por eso, aquí se "capa" el LARGO VISUAL de
+// esa barra al tamaño de la barra más grande con datos reales, pero la
+// ETIQUETA y el tooltip siguen mostrando el valor verdadero — así el usuario
+// ve que existen registros sin dato, sin que aplasten el resto de la gráfica.
 function renderHBar(domId, entries, color) {
   const chart = getOrCreateChart(domId);
   if (!chart) return;
@@ -227,15 +235,37 @@ function renderHBar(domId, entries, color) {
   const maxLabelLen = labels.reduce((m, l) => Math.max(m, l.length), 0);
   const leftMargin = Math.min(260, Math.max(90, Math.round(maxLabelLen * 6.4) + 26));
 
+  // Valor máximo entre las filas CON dato real (excluye "SIN DATO"), para
+  // usarlo como techo visual de la barra de "SIN DATO" si esta lo rebasa.
+  const maxConDato = data.reduce((m, [name, v]) => name === "SIN DATO" ? m : Math.max(m, v), 0);
+
+  const seriesData = data.map(([name, v]) => {
+    const esSinDato = name === "SIN DATO";
+    const capar = esSinDato && maxConDato > 0 && v > maxConDato;
+    return {
+      value: capar ? maxConDato : v,
+      actualValue: v,
+      itemStyle: capar ? { color: PALETTE.gray, borderRadius: [0,4,4,0] } : undefined,
+    };
+  });
+
   applyChartOption(domId, chart, {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "shadow" },
+      formatter: params => params.map(p =>
+        `${p.marker} ${p.axisValueLabel}: ${(p.data.actualValue ?? p.value).toLocaleString("es-MX")}`
+      ).join("<br/>"),
+    },
     grid: { left: leftMargin, right: 24, top: 10, bottom: 10 },
     xAxis: { type: "value", splitLine: { lineStyle: { color: "#EEF1F4" } } },
     yAxis: { type: "category", data: labels, axisLabel: { fontSize: 11 } },
     series: [{
-      type: "bar", data: data.map(([,v]) => v), barMaxWidth: 16,
+      type: "bar", data: seriesData, barMaxWidth: 16,
       itemStyle: { color: color || PALETTE.blue, borderRadius: [0,4,4,0] },
-      label: { show: true, position: "right", fontSize: 11, color: "#4A4F57" },
+      label: {
+        show: true, position: "right", fontSize: 11, color: "#4A4F57",
+        formatter: p => (p.data.actualValue ?? p.value).toLocaleString("es-MX"),
+      },
     }],
   });
 }
