@@ -237,10 +237,13 @@ function renderHBar(domId, entries, color) {
 
   // Valor máximo entre las filas CON dato real (excluye "SIN DATO"), para
   // usarlo como techo visual de la barra de "SIN DATO" si esta lo rebasa.
-  const maxConDato = data.reduce((m, [name, v]) => name === "SIN DATO" ? m : Math.max(m, v), 0);
+  // "SIN DATO SIN DATO" cubre el caso de Top submarcas, donde la fila
+  // combina marca + submarca (ver data.js) y ambas vienen vacías a la vez.
+  const esSinDatoLabel = name => name === "SIN DATO" || name === "SIN DATO SIN DATO";
+  const maxConDato = data.reduce((m, [name, v]) => esSinDatoLabel(name) ? m : Math.max(m, v), 0);
 
   const seriesData = data.map(([name, v]) => {
-    const esSinDato = name === "SIN DATO";
+    const esSinDato = esSinDatoLabel(name);
     const capar = esSinDato && maxConDato > 0 && v > maxConDato;
     return {
       value: capar ? maxConDato : v,
