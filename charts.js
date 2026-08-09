@@ -272,7 +272,7 @@ function renderMunicipiosCombo(topMunicipios, topMunicipiosPorTasa) {
     },
     grid: { left: leftMargin, right: 24, top: 50, bottom: 40 },
     xAxis: [
-      { type: "value", position: "bottom", name: "Eventos", nameLocation: "middle", nameGap: 22, nameTextStyle: { fontSize: 10, color: PALETTE.navy }, splitLine: { lineStyle: { color: "#EEF1F4" } } },
+      { type: "value", position: "bottom", splitLine: { lineStyle: { color: "#EEF1F4" } } },
       { type: "value", position: "top", name: "Tasa /100k hab.", nameLocation: "middle", nameGap: 22, nameTextStyle: { fontSize: 10, color: PALETTE.blueLight }, splitLine: { show: false } },
     ],
     yAxis: { type: "category", data: labels, axisLabel: { fontSize: 11 } },

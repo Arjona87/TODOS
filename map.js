@@ -11,6 +11,15 @@ let CLUSTER_LAYER = null;   // vista "cluster": agrupados por zona/zoom (vista o
 let HEAT_LAYER = null;      // vista "heat": mapa de calor por intensidad (vista ejecutiva)
 let MAP_VIEW = "heat";      // pre-seleccionado
 
+// --- Panel temporal de calibración del heat map (ver #heat-tuning-panel en
+// index.html). Valores iniciales = últimos acordados; quitar junto con el
+// panel una vez fijados los valores finales en buildHeatLayer(). ---
+let HEAT_RADIUS = 14;
+let HEAT_BLUR = 10;
+let HEAT_MIN_OPACITY = 0.2;
+let HEAT_POINT_WEIGHT = 0.35;
+let LAST_WITH_GEO = [];     // último set de puntos georreferenciados renderizado (para poder reconstruir el heat layer sin volver a filtrar records)
+
 // Municipios del AMG (idéntico al listado documentado en CAPAS_MAPA_COMPLETO.md)
 const MUNICIPIOS_AMG = [
   'Guadalajara', 'Zapopan', 'San Pedro Tlaquepaque',
@@ -74,6 +83,7 @@ function initMap() {
   LEAFLET_MAP.addLayer(MARKERS_LAYER);
 
   wireMapViewToggle();
+  wireHeatTuningPanel();
 
   return LEAFLET_MAP;
 }
@@ -95,13 +105,49 @@ function makeColoredDivIcon(color) {
 // mismas coordenadas lat/lon ya reproyectadas — no requiere cálculo extra.
 function buildHeatLayer(withGeo) {
   if (typeof L.heatLayer !== "function") return null; // plugin no cargó (ver index.html)
-  const points = withGeo.map(r => [r.lat, r.lon, 0.55]);
+  const points = withGeo.map(r => [r.lat, r.lon, HEAT_POINT_WEIGHT]);
   if (HEAT_LAYER) LEAFLET_MAP.removeLayer(HEAT_LAYER);
   HEAT_LAYER = L.heatLayer(points, {
-    radius: 24, blur: 20, maxZoom: 15, minOpacity: 0.35,
+    radius: HEAT_RADIUS, blur: HEAT_BLUR, maxZoom: 15, minOpacity: HEAT_MIN_OPACITY,
     gradient: { 0.2: "#1B4F91", 0.4: "#2E6DB4", 0.6: "#F5821F", 0.8: "#E8792D", 1.0: "#D64545" },
   });
   return HEAT_LAYER;
+}
+
+// Vuelve a construir el heat layer con las variables actuales del panel de
+// calibración temporal (#heat-tuning-panel) y lo re-aplica al mapa si la
+// vista activa es "Mapa de calor" — sin volver a filtrar/recalcular records.
+function rebuildHeatFromPanel() {
+  if (!LEAFLET_MAP || !LAST_WITH_GEO.length) return;
+  buildHeatLayer(LAST_WITH_GEO);
+  if (MAP_VIEW === "heat") applyMapView();
+}
+
+// Conecta los 4 sliders del panel temporal de calibración a las variables
+// HEAT_* y reconstruye el heat layer en vivo con cada cambio. Panel de
+// trabajo: quitar esta función y su llamada junto con #heat-tuning-panel
+// (index.html) una vez fijados los valores finales en buildHeatLayer().
+function wireHeatTuningPanel() {
+  const panel = document.getElementById("heat-tuning-panel");
+  if (!panel || panel.dataset.wired) return;
+  panel.dataset.wired = "1";
+
+  function bind(inputId, labelId, isFloat, setter) {
+    const input = document.getElementById(inputId);
+    const label = document.getElementById(labelId);
+    if (!input) return;
+    input.addEventListener("input", () => {
+      const v = isFloat ? parseFloat(input.value) : parseInt(input.value, 10);
+      if (label) label.textContent = v;
+      setter(v);
+      rebuildHeatFromPanel();
+    });
+  }
+
+  bind("heat-radius", "heat-radius-val", false, v => { HEAT_RADIUS = v; });
+  bind("heat-blur", "heat-blur-val", false, v => { HEAT_BLUR = v; });
+  bind("heat-min-opacity", "heat-min-opacity-val", true, v => { HEAT_MIN_OPACITY = v; });
+  bind("heat-point-weight", "heat-point-weight-val", true, v => { HEAT_POINT_WEIGHT = v; });
 }
 
 // Vista "Clusters" (vista operativa/táctica: cuántos eventos por zona, con
@@ -188,6 +234,7 @@ function renderMapMarkers(records) {
   MARKERS_LAYER.clearLayers();
 
   const withGeo = records.filter(r => r.lat && r.lon);
+  LAST_WITH_GEO = withGeo; // usado por el panel temporal de calibración del heat map
   withGeo.forEach(r => {
     const marker = L.circleMarker([r.lat, r.lon], {
       pane: "cgesMarkersPane",
